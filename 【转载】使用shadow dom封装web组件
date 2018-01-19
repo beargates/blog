@@ -1,0 +1,103 @@
+时间 2015-03-16 18:34:00  博客园精华区
+
+原文  http://www.cnblogs.com/WhiteCusp/p/4342502.html
+主题 JavaScript
+什么是shadow dom？
+
+首先我们先来看看它长什么样子。在HTML5中，我们只用写如下简单的两行代码，就可以通过 < video > 标签来创建一个浏览器自带的视频播放器控件。
+
+<video controls="">
+    <source src="https://mdn.mozillademos.org/files/2587/AudioTest%20(1).ogg" type="audio/ogg">
+</video>
+而在各个浏览器中，它都有各不相同的外观展现，例如chrome中它长下面这样：
+
+
+
+但为什么我们在dom中无法看到他们内部的结构？噢，实际上浏览器通过某种技术把它们隐藏起来而已，但我们可以通过 DevTools 设置中勾选 Show user agent shadow DOM 来看到这些结构。勾选后我们发现在  < video > 标签下多了  #shadow-root(user-agent) 这个东西，它包含了  video 控件的内部dom结构，这就是所谓的 shadow dom 了。
+
+
+
+并且shadow dom为我们提供了简单有效的样式隔离。如果你尝试通过 input[type="button"] { display : none ; } 之类的样式来影响控件外观，你会发现是无效的。这样如果我们通过 shadow dom 来隐藏控件的内部实现，就不用担心对样式表进行修改时对控件造成影响了。
+
+下面我们来看看如何通过shadow dom来封装控件。
+
+使用Shadow Dom封装控件
+
+首先我们先看看 w3c 对 shadow dom 的描述：
+
+A shadow host is an element that hosts one or more node trees.
+
+A shadow tree is a node tree hosted by a shadow host.
+
+A shadow root is the root node of a shadow tree.
+
+这三句话告诉我们：
+
+- shadow dom 由一颗或多颗 shadow tree 组成，并且需要一个普通的dom元素作为它的容器
+- shadow tree 是一颗节点树
+- shadow root 是shadow tree的根节点
+下面，我们直接通过一个例子来演示如何使用shadow dom来封装web组件：
+
+DOM:
+
+ // 模板
+<template id="wgTemplate">
+  <style>
+          color: #fff;
+          background: #006dcc;
+  </style>
+  <button type="button" class="btn">button widget</button>
+</template>
+// shadow dom 容器
+<div id="my-widget"></div>
+
+JS:
+
+// 创建shadow dom
+<script type='text/javascript'>
+  var host = document.querySelector("#my-widget")
+  var tp = document.querySelector("#wgTemplate")
+  var clone = document.importNode(tp.content, true)
+  host.createShadowRoot().appendChild(clone)
+</script>
+第一步，我们需要一个shadow dom的容器  < div id ="my-widget" ></ div >  
+随后通过  document.importNode()  获取到控件的模板并克隆
+接着使用  createShadowRoot()  要创建一个 shadow root 作为 shadow tree 的根节点
+最后将将模板内容  clone  作为 shadow tree 插入到 shadow root 中
+打开页面，我们可以看到如下结构，这就是一个利用shadow隐藏控件内部实现最简单的例子了。
+
+
+
+接着我们还可以结合上一篇文章《web component之custom element》的创建自定义元素的方法来封装 自定义控件 ：
+
+dom:
+
+// 模板
+<template id="wgTemplate">
+  <style>
+    .btn {
+      color: #fff;
+      background: #006dcc;
+    }
+  </style>
+  <button type="button" class="btn">custom button widget</button>
+</template>
+js:
+
+// 创建自定义控件
+<script type='text/javascript'>
+  var proto = Object.create(HTMLElement.prototype, {
+    createdCallback: {
+      value: function() {
+        var tp = document.querySelector('#wgTemplate')
+        var clone = document.importNode(tp.content, true)
+        this.createShadowRoot().appendChild(clone)
+      }
+    }
+  })
+
+  var MyButtom = document.registerElement('my-buttom', {prototype: proto})
+  
+  document.body.appendChild(new MyButtom())
+</script>
+
