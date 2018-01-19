@@ -1,0 +1,100 @@
+1. 我们的组件存在的问题
+     A. 很多组件与组件之间没有直接联系
+          a. 比如z-index
+               eg: $z-index: (
+                 modal              : 200,
+                 navigation         : 100,
+                 footer             : 90,
+                 triangle           : 60,
+                 navigation-rainbow : 50,
+                 share-type         : 41,
+                 share              : 40,
+               );
+               @function z-index($key) {
+                 @return map-get($z-index, $key);
+               }
+               @mixin z-index($key) {
+                 z-index: z-index($key);
+               }
+               /*调用时*/
+               .navigation {
+                 @include z-index(navigation);
+               }
+     B. 关于autoprefixer-loader(XXXXX)
+          a. 此loader可能存在如下bug
+               eg: 处理display: flex时
+                    编译后输出display: -webkit-box; display: flex;
+                    缺少display: -webkit-flex
+
+     C. 之前没有注意过的问题
+          a. -webkit-call-out：none；在ios8.1的a标签上不起作用，yo暂时没有给出解决方案
+          b. input等控件disabled状态 ios会给opacity：.4
+
+2. 值得我们学习的地方
+     A. map-get($map, $key)
+          类似的还有：
+               map-keys(map)
+               map-values(map)
+               map-get(map,key)     
+               map-has-key(map,key)
+               map-merge(map1,map2) 合并map
+               map-remove(map,keys)
+               keywords(args) 返回一个函数参数组成的map(map)     @mixin foo(args...){@debug keywords($args); //=> (arg1: val, arg2: val)}
+     B. @content
+          `@content`用在`mixin`里面的，当定义一个`mixin`后，并且设置了`@content`；
+          `@include`的时候可以传入相应的内容到`mixin`里面
+
+          官网给的例子：
+          $color: white;
+          @mixin colors($color: blue) {
+            background-color: $color;
+            @content;
+            border-color: $color;
+          }
+          .colors {
+            @include colors { color: $color; }
+          }
+          编译后：
+          .colors {
+            background-color: blue;
+            color: white;
+            border-color: blue;
+          }
+
+3. n-proxy vs jerry-proxy
+
+4. 设计模式（ui统一原则）
+     所有的color，font-size，bg-color等都在一个统一的配置文件（variables.scss）内，包括所有的组件
+     好处：显而易见，易于管理，维护（同时也不会发生视觉来找你，“来，这里的线的颜色给我改一下”，这种事的发生）
+      
+     坏处：需要学习成本，开发成本
+
+// TODO ykit-config-yo（好处，坏处（可能需要引入ykit（虽然它是基于webpack v1.3的），考虑成本））
+5. 在每一个入口文件里，都引用所有的样式文件（最外层的，比如reset.scss(该文件再引用可能用到的所有样式文件，包括yo组件的所有默认样式，公共设置等)），再用ykit-config-yo插件去掉无用样式
+
+6. flex+ellipsis(XXXXX)
+     低端浏览器上使用
+          <div>flex item
+               <div float: left>looooooooong text</div>
+               <i float: right>::after{content: '...'}</i>
+          </div>
+
+7. 如果用了这个框架
+A. 关于font-size（引自core/base.scss）
+// base
+$_base: (
+    // root字号类型：normal | scaling
+    // normal表示root字号使用 `font-size-root`
+    // scaling表示root字号使用 `font-size-root-scaling`
+    responsive-type:        normal,
+    // html root使用100px，方便rem单位的换算
+    font-size-root:         100px,
+    // 适配：用于做元素随屏幕大小而变化的情况
+    font-size-root-scaling: 31.25vw, // 这里的换算方式跟我们的rem如出一辙,但是现实是残酷的. vw, vh, vmin, vmax等单位在移动设备上支持的很惨(ios7部分支持,android4.4以下不支持)
+    // body的默认字号（文档基准字号）
+    // chrome37-45/opera24-33在body上使用rem时有个bug（其他版本未测），后续版本已被修复: // 另
+    // 只要引用了外部样式，不论里面的内容是什么，body上的rem就会失效 // ???? body上的rem????
+    // 这时在开发者工具里，关闭又开启一次该条属性，则生效，刷新又挂
+    // 由于body是html的子元素，所以对于body来讲，此时rem与em的效果是相同的
+    font-size:            .14em,
+导致element、fragment这两大块都不能使用，因为都涉及到尺寸的问题
