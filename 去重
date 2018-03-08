@@ -1,0 +1,10 @@
+// 去重
+const keys = [];
+const items = [];
+arr.forEach(item => {
+  if (!keys.find(e => e === item.id)) {
+    keys.push(item.id);
+    items.push(item);
+  }
+});
+arr = items;
