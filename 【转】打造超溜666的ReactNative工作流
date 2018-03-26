@@ -1,0 +1,195 @@
+ 
+Article | 打造超溜666的ReactNative工作流
+原文：https://coderge.com/articles/201803/react-native-run.html
+声明
+本文适合无安卓开发经验的前端工程师阅读，请安卓大佬勿喷~
+
+项目背景
+由于开发速度快、性能较Hybrid高以及其他一些优势，ReactNative在前端开发中的使用日渐增多，但是随之而来也产生了很多问题：
+
+开发环境、测试环境、正式环境难以区分，发测试和正式包时需要手动修改很多关于环境的配置（如请求的接口地址等），繁琐且容易出错
+为了新包可以覆盖安装老包，每次打包前还需要手动维护版本号使其递增
+打包生成文件名为app-debug.apk、app-release.apk，不便于区分和存档
+执行react-native run-android时会开启一个shell窗口来运行js-server（新版本还会重复开启），很烦
+……
+解决方案
+环境区分
+正常需求来讲，我们需要区分三种环境——开发环境、测试环境、正式环境（也可以成为生产环境）。执行react-native run-android时，默认是使用了Debug环境（此处对应为开发环境），而打包时我们通常会执行cd android && ./gradlew assembleRelease，很明显可以看出这里使用的是Release环境（此处对应正式环境或生产环境），但是我们要为测试工程师提供测试包时也是使用这个命令，所以就会造成正式包和测试包使用同一套环境，只能靠手动修改代码来完成环境区分。
+
+那么，为了解决上述问题，我们需要引入一个新的环境——Beta，也即为测试环境。首先我们需要修改项目的android/app/build.gradle文件：
+
+// 设置beta版本打包jsbundle
+// 如没有设置，则beta版会和debug版一样，读取本地js-server的jsbundle
+project.ext.react = [
+    bundleInBeta: true
+]
+
+...
+
+android {
+    ...
+    buildTypes {
+        release {
+            ...
+        }
+        // 此处增加beta的配置
+        beta {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+设置完成之后，我们在打测试包时执行cd android && ./gradlew assembleBeta即可，和打正式包的cd android && ./gradlew assembleRelease已经产生了区别。
+
+但到了这里，我们只是打包命令产生了变化，实际的配置信息并没有根据环境自动切换。那么我们就需要继续修改gradle文件，使得不同的环境读取不同的配置。
+
+android {
+    ...
+    buildTypes {
+        release {
+            ...
+            // 不是开发环境，不是测试环境，所以是正式环境
+            buildConfigField "boolean", "IS_DEBUG", "false"
+            buildConfigField "boolean", "IS_DEV", "false"
+        }
+        beta {
+            ...
+            // 不是开发环境，是测试环境，所以是测试环境
+            buildConfigField "boolean", "IS_DEBUG", "true"
+            buildConfigField "boolean", "IS_DEV", "false"
+        }
+        // 此处增加Debug的配置
+        debug {
+            // 是开发环境，是测试环境，所以是开发环境
+            buildConfigField "boolean", "IS_DEBUG", "true"
+            buildConfigField "boolean", "IS_DEV", "true"
+        }
+    }
+}
+设置好之后，在Android的代码中，我们通过BuildConfig.IS_DEBUG、BuildConfig.IS_DEV就可以获取到我们当前的运行环境了，我们根据环境，通过代码就很容易进行配置的切换。但这仅仅是Android的层面，我们还需要将这个信息传递给RN层面，在js中也需要知道运行环境，这时候只需要对android/app/src/main/java/xxx/MainActivity.java做些小改动就可以：
+
+...
+public class MainActivity extends ReactActivity {
+    ...
+    class MyReactDelegate extends ReactActivityDelegate {
+        final Context context;
+
+        public MyReactDelegate(Activity activity, @javax.annotation.Nullable String mainComponentName) {
+            super(activity, mainComponentName);
+            context = activity;
+        }
+
+        @javax.annotation.Nullable
+        @Override
+        protected Bundle getLaunchOptions() {
+            Bundle bundle = new Bundle();
+            bundle.putBoolean("isDebugMode", BuildConfig.IS_DEBUG);
+            bundle.putBoolean("isDevMode", BuildConfig.IS_DEV);
+            return bundle;
+        }
+    }
+}
+之后我们在RN的根元素中就能获取到这两个信息：
+
+...
+class App extends Component {
+  constructor (props) {
+    super(props)
+    console.log('isDebugMode', props.isDebugMode)
+    console.log('isDevMode', props.isDevMode)
+  }
+  ...
+}
+...
+然后如何切换配置就不用我多说了吧？~
+
+包名及包其他信息修改
+上面虽说已经可以区分环境打包，但由于包名相同，三个版本的安装包并不能在一台设备上共存，且即使可以共存，三个包安装后显示的名称已经图标均完全相同无法区分，所以我们需要做一些操作使得它们可以被很容易区分出来。
+
+修改包名和显示名
+android/app/build.gradle文件：
+
+release {
+    ...
+    // 设置manifest占位符，为了显示不同的软件名
+    manifestPlaceholders = [
+        APP_NAME      : "@string/app_name"
+    ]
+}
+beta {
+    ...
+    //为beta版本的包名添加.beta后缀
+    applicationIdSuffix ".beta"
+    // 设置manifest占位符，为了显示不同的软件名
+    manifestPlaceholders = [
+        APP_NAME      : "@string/app_name_beta"
+    ]
+}
+debug {
+    ...
+    //为debug版本的包名添加.debug后缀
+    applicationIdSuffix ".debug"
+    // 设置manifest占位符，为了显示不同的软件名
+    manifestPlaceholders = [
+        APP_NAME      : "@string/app_name_debug"
+    ]
+}
+android/app/src/main/AndroidManifest.xml文件：
+
+<application
+    ...
+    android:label="${APP_NAME}">
+    <activity
+        ...
+        android:name=".MainActivity"
+        android:label="${APP_NAME}">
+        ...
+    </activity>
+    ...
+</application>
+android/app/src/main/res/values/strings.xml文件：
+
+<resources>
+    <string name="app_name">软件XXX</string>
+    <string name="app_name_beta">软件XXX测试版</string>
+    <string name="app_name_debug">软件XXX开发版</string>
+</resources>
+！！！需要注意的一点是，修改了启动包名之后，RN默认的启动命令是可以正常打包，但是不会使应用自启，也就是执行react-native run-android后，我们需要手动启动APP。但RN开发团队早就想到了这点，cli中是可以通过参数来解决这个问题的。我们将启动命令修改为react-native run-android --appIdSuffix=debug即可。
+
+修改图标
+这个就比较简单了，图标文件存放在android/app/src/main/res下（此为Release版本对应路径，Beta版本将main替换为beta，Debug版本将main替换为debug，如目录不存在则自行创建即可），按照安卓的图标规则将资源放在对应目录下即可。此处推荐一个一键生成应用图标网站：http://icon.wuruihong.com/，注：没有收广告费。
+
+icons
+
+自己做了一个区分环境的图标~
+
+版本号自增以及APK文件名修改
+依旧是修改android/app/build.gradle文件：
+
+...
+def versionNamePrefix = "1.0"
+// 使用git提交次数作为版本号，可保证递增
+def revisionNumber = 'git rev-list HEAD --count'.execute().getText().trim()
+// 使用git的describe作为版本描述
+def revisionDescription = 'git describe --always'.execute().getText().trim()
+def verName = versionNamePrefix + "." + revisionNumber + "." + revisionDescription
+
+android {
+    ...
+    applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+            output.outputFile = new File(output.outputFile.parent, "XXXXX_" +  "v" + verName + "_" + buildType.name + ".apk");
+        }
+    }
+}
+会生成 XXXXX_v1.0.214.2837e31_release.apk、XXXXX_v1.0.214.2837e31_beta.apk、XXXXX_v1.0.214.2837e31_debug.apk 类似的apk文件名。
+
+避免启动弹窗
+这么做有两个好处，第一，不会每次启动都弹出一个框，没那么烦了；第二，多个RN项目切换时，不会因为忘记关掉js-server导致项目读取的bundle张冠李戴。
+
+实现方法很简单，执行react-native start & react-native run-android --appIdSuffix=debug --no-packager即可，我们也可以在package.json中为其配置一个script。
+
+上面的方法已经可以实现，但我选择了使用concurrently这个工具，想知道具体怎么用以及用这个有什么好还是挺官方吹吧，我就不多讲了。执行concurrently -r 'react-native start' 'react-native run-android --appIdSuffix=debug --no-packager'。之后就可以直接在当前shell窗口中看到js-server的信息啦~
+
+
+Powered by Nodejs、Markd、Livere.
